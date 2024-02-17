@@ -2,6 +2,8 @@ package PoliteDog
 
 import (
 	"fmt"
+	"github.com/fangnan700/PoliteDog/render"
+	"html/template"
 	"log"
 	"net/http"
 )
@@ -10,12 +12,30 @@ import (
 type Dog struct {
 	Routers      []*Router
 	RouterGroups []*RouterGroup
+	TmplFuncMap  template.FuncMap
+	HTMLRender   render.HTMLRender
 }
 
 func NewDog() *Dog {
 	return &Dog{
 		Routers: make([]*Router, 0),
 	}
+}
+
+// SetFuncMap 设置模板渲染过程中可能使用的自定义函数
+func (dog *Dog) SetFuncMap(funcMap template.FuncMap) {
+	dog.TmplFuncMap = funcMap
+}
+
+// SetTemplate 允许开发者自己设置模板
+func (dog *Dog) SetTemplate(tmpl *template.Template) {
+	dog.HTMLRender = render.HTMLRender{Template: tmpl}
+}
+
+// LoadTemplate 加载模板
+func (dog *Dog) LoadTemplate(pattern string) {
+	tmpl := template.Must(template.New("").Funcs(dog.TmplFuncMap).ParseGlob(pattern))
+	dog.SetTemplate(tmpl)
 }
 
 // RegisterRouters 将路由注册到引擎
@@ -36,6 +56,7 @@ func (dog *Dog) RegisterRouterGroup(groups ...*RouterGroup) {
 // ServeHTTP 预处理Http请求
 func (dog *Dog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := &Context{
+		e:        dog,
 		w:        w,
 		r:        r,
 		Method:   r.Method,
