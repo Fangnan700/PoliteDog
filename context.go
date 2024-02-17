@@ -12,6 +12,7 @@ type Context struct {
 
 	// 请求数据
 	Method string
+	Path   string
 
 	// 响应数据
 	Code int

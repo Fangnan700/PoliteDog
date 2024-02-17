@@ -39,6 +39,7 @@ func (dog *Dog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w:        w,
 		r:        r,
 		Method:   r.Method,
+		Path:     r.URL.Path,
 		index:    -1,
 		handlers: make([]HandlerFuc, 0),
 	}
