@@ -6,10 +6,12 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 )
 
 // Dog 核心引擎结构体
 type Dog struct {
+	pool         sync.Pool
 	Routers      []*Router
 	RouterGroups []*RouterGroup
 	TmplFuncMap  template.FuncMap
@@ -17,8 +19,21 @@ type Dog struct {
 }
 
 func NewDog() *Dog {
-	return &Dog{
+	dog := &Dog{
 		Routers: make([]*Router, 0),
+	}
+
+	dog.pool.New = func() any {
+		return dog.allocateContext()
+	}
+
+	return dog
+}
+
+// 通过同步对象池来解决context频繁创建的问题
+func (dog *Dog) allocateContext() any {
+	return &Context{
+		e: dog,
 	}
 }
 
@@ -53,19 +68,23 @@ func (dog *Dog) RegisterRouterGroup(groups ...*RouterGroup) {
 	}
 }
 
-// ServeHTTP 预处理Http请求
+// ServeHTTP
 func (dog *Dog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := &Context{
-		e:        dog,
-		w:        w,
-		r:        r,
-		Method:   r.Method,
-		Path:     r.URL.Path,
-		index:    -1,
-		handlers: make([]HandlerFuc, 0),
-	}
+	ctx := dog.pool.Get().(*Context)
+	ctx.w = w
+	ctx.r = r
+	ctx.Method = r.Method
+	ctx.Path = r.URL.Path
+	ctx.index = -1
+	ctx.handlers = make([]HandlerFuc, 0)
 
-	path := r.URL.Path
+	dog.HttpRequestHandler(ctx)
+	dog.pool.Put(ctx)
+}
+
+// HttpRequestHandler 预处理Http请求
+func (dog *Dog) HttpRequestHandler(ctx *Context) {
+	path := ctx.r.URL.Path
 	matched := false
 	for _, router := range dog.Routers {
 		trieNode := router.RouterTrie.next.Search(path)
