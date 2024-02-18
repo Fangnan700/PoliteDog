@@ -117,3 +117,12 @@ func (c *Context) XML(code int, data any) error {
 		Data: data,
 	})
 }
+
+// Redirect 重定向
+func (c *Context) Redirect(code int, url string) error {
+	return c.Render(c.w, &render.RedirectRender{
+		Code:     code,
+		Request:  c.r,
+		Location: url,
+	})
+}
