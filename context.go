@@ -4,6 +4,7 @@ import (
 	"github.com/fangnan700/PoliteDog/render"
 	"html/template"
 	"net/http"
+	"net/url"
 )
 
 // Context 上下文封装
@@ -125,4 +126,33 @@ func (c *Context) Redirect(code int, url string) error {
 		Request:  c.r,
 		Location: url,
 	})
+}
+
+// File 文件下载
+func (c *Context) File(code int, filepath string) {
+	c.Status(code)
+	http.ServeFile(c.w, c.r, filepath)
+}
+
+// FileAttachment 自定义文件名下载
+func (c *Context) FileAttachment(code int, filename string, filepath string) {
+	c.Status(code)
+	if isASCII(filename) {
+		c.SetHeader("Content-Disposition", `attachment;filename="`+filename+`"`)
+	} else {
+		c.SetHeader("Content-Disposition", `attachment;filename*=UTF-8''`+url.QueryEscape(filename))
+	}
+
+	http.ServeFile(c.w, c.r, filepath)
+}
+
+// FileFromFS 从文件系统获取下载（filepath是相对于文件系统的路径）
+func (c *Context) FileFromFS(code int, filepath string, fs http.FileSystem) {
+	defer func(oldPath string) {
+		c.r.URL.Path = oldPath
+	}(c.r.URL.Path)
+
+	c.Status(code)
+	c.r.URL.Path = filepath
+	http.FileServer(fs).ServeHTTP(c.w, c.r)
 }
