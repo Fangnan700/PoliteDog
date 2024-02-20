@@ -2,20 +2,21 @@ package pool
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+// TODO 优化或重构协程池，目前无法满足百万级并发
+
 type signal struct{}
 
 type Pool struct {
 	// 最大运行worker数量
-	cap int32
+	cap int64
 
 	// 正在运行worker数量
-	running int32
+	running int64
 
 	// 空闲worker的过期时间
 	expire time.Duration
@@ -29,11 +30,17 @@ type Pool struct {
 	// 限制单次操作
 	once sync.Once
 
+	// 阻塞唤醒
+	cond *sync.Cond
+
 	// 空闲worker队列
 	workers []*worker
+
+	// worker缓存
+	workerCache sync.Pool
 }
 
-func NewPool(cap int32, expire int64) (*Pool, error) {
+func NewPool(cap int64, expire int64) (*Pool, error) {
 	if cap < 0 {
 		return nil, errors.New("cap can not be less than 0")
 	}
@@ -45,6 +52,13 @@ func NewPool(cap int32, expire int64) (*Pool, error) {
 	pool.cap = cap
 	pool.expire = time.Duration(expire) * time.Second
 	pool.release = make(chan signal, 1)
+	pool.cond = sync.NewCond(&pool.lock)
+	pool.workerCache.New = func() any {
+		return &worker{
+			pool: pool,
+			task: make(chan func(), 1),
+		}
+	}
 
 	go pool.expireWorker()
 	return pool, nil
@@ -57,7 +71,6 @@ func (p *Pool) Submit(task func()) error {
 
 	w := p.getWorker()
 	w.task <- task
-	w.pool.incRunning()
 
 	return nil
 }
@@ -78,13 +91,17 @@ func (p *Pool) Release() {
 	})
 }
 
+func (p *Pool) RunningWorkers() int {
+	return int(atomic.LoadInt64(&p.running))
+}
+
 func (p *Pool) expireWorker() {
 	ticker := time.NewTicker(p.expire)
 	for range ticker.C {
-		fmt.Printf("%v\n", p.workers)
+		//fmt.Printf("%v\n", p.workers)
 
 		p.lock.Lock()
-		var index int
+		var index = -1
 		freeWorkers := p.workers
 		if len(freeWorkers) > 0 {
 			for i, w := range freeWorkers {
@@ -122,9 +139,15 @@ func (p *Pool) getWorker() *worker {
 	}
 
 	if p.running < p.cap {
-		w := &worker{
-			pool: p,
-			task: make(chan func(), 1),
+		var w *worker
+		tw := p.workerCache.Get()
+		if tw != nil {
+			w = tw.(*worker)
+		} else {
+			w = &worker{
+				pool: p,
+				task: make(chan func(), 1),
+			}
 		}
 		w.run()
 
@@ -132,6 +155,7 @@ func (p *Pool) getWorker() *worker {
 	} else {
 		for {
 			p.lock.Lock()
+			p.cond.Wait()
 			freeWorkers = p.workers
 			n = len(freeWorkers)
 
@@ -154,13 +178,14 @@ func (p *Pool) putWorker(w *worker) {
 	w.last = time.Now()
 	p.lock.Lock()
 	p.workers = append(p.workers, w)
+	p.cond.Signal()
 	p.lock.Unlock()
 }
 
 func (p *Pool) incRunning() {
-	atomic.AddInt32(&p.running, 1)
+	atomic.AddInt64(&p.running, 1)
 }
 
 func (p *Pool) decRunning() {
-	atomic.AddInt32(&p.running, -1)
+	atomic.AddInt64(&p.running, -1)
 }

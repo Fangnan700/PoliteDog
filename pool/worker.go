@@ -16,13 +16,26 @@ type worker struct {
 }
 
 func (w *worker) run() {
+	w.pool.incRunning()
 	go w.work()
 }
 
 func (w *worker) work() {
+	defer func() {
+		w.pool.decRunning()
+		w.pool.workerCache.Put(w)
+		err := recover()
+		if err != nil {
+
+		}
+	}()
+
 	for fn := range w.task {
+		if fn == nil {
+			return
+		}
+
 		fn()
 		w.pool.putWorker(w)
-		w.pool.decRunning()
 	}
 }

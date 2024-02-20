@@ -1,57 +1,71 @@
 package pool
 
 import (
-	"fmt"
+	"math"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestPool(t *testing.T) {
-	startTime := time.Now().UnixMilli()
+const (
+	KiB = 1024
+	MiB = 1048567
+)
 
+const (
+	Param    = 100
+	PoolSize = 1000
+	TestSize = 10000
+	n        = 100000
+)
+
+const (
+	RunTimes   = 1000000
+	BenchParam = 10
+)
+
+var curMem uint64
+
+func DemoFuc() {
+	time.Sleep(time.Duration(BenchParam) * time.Millisecond)
+}
+
+func TestNoPool(t *testing.T) {
 	var wg sync.WaitGroup
-	wg.Add(5)
-
-	p, _ := NewPool(5, 2)
-
-	p.Submit(func() {
-		fmt.Println("1111111111111111")
-		time.Sleep(5 * time.Second)
-		wg.Done()
-	})
-
-	p.Submit(func() {
-		fmt.Println("2222222222222222")
-		time.Sleep(5 * time.Second)
-		wg.Done()
-	})
-
-	time.Sleep(5 * time.Second)
-
-	p.Submit(func() {
-		fmt.Println("3333333333333333")
-		time.Sleep(5 * time.Second)
-		wg.Done()
-	})
-
-	p.Submit(func() {
-		fmt.Println("4444444444444444")
-		time.Sleep(5 * time.Second)
-		wg.Done()
-	})
-
-	time.Sleep(5 * time.Second)
-
-	p.Submit(func() {
-		fmt.Println("5555555555555555")
-		time.Sleep(5 * time.Second)
-		wg.Done()
-	})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			DemoFuc()
+			wg.Done()
+		}()
+	}
 
 	wg.Wait()
+	mem := runtime.MemStats{}
+	runtime.ReadMemStats(&mem)
 
-	endTime := time.Now().UnixMilli()
+	curMem = mem.TotalAlloc/MiB - curMem
+	t.Logf("Memory usage: %d MB", curMem)
+}
 
-	fmt.Println((endTime-startTime)/1000, " s")
+func TestWithPool(t *testing.T) {
+	pool, _ := NewPool(math.MaxInt64, 10)
+	defer pool.Release()
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		_ = pool.Submit(func() {
+			DemoFuc()
+			wg.Done()
+		})
+	}
+
+	wg.Wait()
+	mem := runtime.MemStats{}
+	runtime.ReadMemStats(&mem)
+
+	curMem = mem.TotalAlloc/MiB - curMem
+	t.Logf("Memory usage: %d MB", curMem)
 }
