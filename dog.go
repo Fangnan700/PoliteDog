@@ -92,6 +92,9 @@ func (dog *Dog) HttpRequestHandler(ctx *Context) {
 	matched := false
 	methodHit := false
 
+	// 注册异常捕获中间件
+	ctx.handlers = append(ctx.handlers, Recovery)
+
 	for _, router := range dog.Routers {
 		trieNode := router.RouterTrie.next.Search(path)
 

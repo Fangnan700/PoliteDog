@@ -156,9 +156,9 @@ func (c *Context) Next() {
 	}
 }
 
-// Abort 将上下文移交给最后一个handler
+// Abort 进入引擎处理上下文
 func (c *Context) Abort() {
-	c.index = len(c.handlers) - 1
+	c.index = len(c.handlers) - 2
 	c.handlers[c.index](c)
 }
 
