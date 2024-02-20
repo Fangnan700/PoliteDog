@@ -2,6 +2,7 @@ package PoliteDog
 
 import (
 	"fmt"
+	"github.com/fangnan700/PoliteDog/logger"
 	"github.com/fangnan700/PoliteDog/render"
 	"html/template"
 	"log"
@@ -12,8 +13,10 @@ import (
 // Dog 核心引擎结构体
 type Dog struct {
 	pool         sync.Pool
+	logger       *logger.Logger
 	Routers      []*Router
 	RouterGroups []*RouterGroup
+	Middlewares  []HandlerFuc
 	TmplFuncMap  template.FuncMap
 	HTMLRender   render.HTMLRender
 }
@@ -22,10 +25,10 @@ func NewDog() *Dog {
 	dog := &Dog{
 		Routers: make([]*Router, 0),
 	}
-
 	dog.pool.New = func() any {
 		return dog.allocateContext()
 	}
+	dog.logger = logger.DefaultLogger()
 
 	return dog
 }
@@ -76,6 +79,7 @@ func (dog *Dog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.Method = r.Method
 	ctx.Path = r.URL.Path
 	ctx.index = -1
+	ctx.Code = 0
 	ctx.handlers = make([]HandlerFuc, 0)
 
 	dog.HttpRequestHandler(ctx)
@@ -86,15 +90,13 @@ func (dog *Dog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (dog *Dog) HttpRequestHandler(ctx *Context) {
 	path := ctx.r.URL.Path
 	matched := false
+	methodHit := false
+
 	for _, router := range dog.Routers {
 		trieNode := router.RouterTrie.next.Search(path)
 
 		// 匹配到路由
 		if trieNode != nil && trieNode.end {
-			if trieNode.method != ctx.Method {
-				ctx.Status(http.StatusMethodNotAllowed)
-				return
-			}
 			matched = true
 
 			// 根据key提取handler
@@ -106,20 +108,66 @@ func (dog *Dog) HttpRequestHandler(ctx *Context) {
 			ctx.handlers = append(ctx.handlers, handle)
 			ctx.handlers = append(ctx.handlers, router.PostHandlers...)
 
-			// 将上下文移交给对应的handler
-			ctx.Next()
+			// 校验请求方法
+			if trieNode.method == ctx.Method {
+				methodHit = true
+			}
 		}
 	}
 
-	// 未找到路由
-	if !matched {
+	// 注册日志中间件
+	ctx.handlers = append(ctx.handlers, dog.logReq)
+
+	if matched {
+		if methodHit {
+			ctx.Next()
+			return
+		} else {
+			ctx.Data(http.StatusMethodNotAllowed, nil)
+			ctx.Abort()
+			return
+		}
+	} else {
 		ctx.Status(http.StatusNotFound)
+		ctx.Abort()
+		return
+	}
+}
+
+func init() {
+	clearTerminal()
+	fmt.Println(
+		"\u001B[36m" +
+			"\t _____          _  _  _          _____\n" +
+			"\t|  __ \\        | |(_)| |        |  __ \\\n" +
+			"\t| |__) |  ___  | | _ | |_   ___ | |  | |  ___    __ _\n" +
+			"\t|  ___/  / _ \\ | || || __| / _ \\| |  | | / _ \\  / _` |\n" +
+			"\t| |     | (_) || || || |_ |  __/| |__| || (_) || (_| |\n" +
+			"\t|_|      \\___/ |_||_| \\__| \\___||_____/  \\___/  \\__, |\n" +
+			"\t                                                 __/ |\n" +
+			"\t                                                |___/\n",
+	)
+}
+
+// SetLogPath 设置日志路径
+func (dog *Dog) SetLogPath(logPath string) {
+	dog.logger.SetLogPath(logPath)
+}
+
+// 打印请求日志
+func (dog *Dog) logReq(ctx *Context) {
+	msg := fmt.Sprintf("%3d %-8s %s", ctx.Code, ctx.Method, ctx.Path)
+	if ctx.Code == http.StatusOK {
+		dog.logger.Info(msg)
+	} else {
+		dog.logger.Warning(msg)
 	}
 }
 
 // Run 启动！
 func (dog *Dog) Run(host string, port int) {
 	addr := fmt.Sprintf("%s:%d", host, port)
+	dog.logger.Info(fmt.Sprintf("PoliteDog running at: %s", addr))
 
 	err := http.ListenAndServe(addr, dog)
 	if err != nil {

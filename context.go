@@ -6,7 +6,6 @@ import (
 	"github.com/fangnan700/PoliteDog/render"
 	"html/template"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -72,7 +71,7 @@ func (c *Context) initPostFormCache() {
 		if err != nil {
 			// 这里由于接收的是通用表单，所以忽略ErrNotMultipart
 			if !errors.Is(err, http.ErrNotMultipart) {
-				log.Println(err)
+				c.e.logger.Error(err.Error())
 			}
 		}
 		c.formCache = c.r.PostForm
@@ -157,6 +156,12 @@ func (c *Context) Next() {
 	}
 }
 
+// Abort 将上下文移交给最后一个handler
+func (c *Context) Abort() {
+	c.index = len(c.handlers) - 1
+	c.handlers[c.index](c)
+}
+
 // Status 返回状态码
 func (c *Context) Status(code int) {
 	c.Code = code
@@ -214,7 +219,6 @@ func (c *Context) HTMLTemplateGlob(code int, name string, data interface{}, patt
 	}
 
 	err = tmpl.Execute(c.w, data)
-
 	return err
 }
 

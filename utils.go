@@ -3,6 +3,9 @@ package PoliteDog
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -35,4 +38,18 @@ func isASCII(str string) bool {
 	}
 
 	return true
+}
+
+// 清除终端
+func clearTerminal() {
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "cls")
+	} else {
+		cmd = exec.Command("clear")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Run()
 }
