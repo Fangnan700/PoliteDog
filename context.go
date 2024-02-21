@@ -1,6 +1,7 @@
 package PoliteDog
 
 import (
+	"encoding/base64"
 	"errors"
 	"github.com/fangnan700/PoliteDog/binding"
 	"github.com/fangnan700/PoliteDog/render"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 )
 
 const defaultMultipartMaxMemory = 32
@@ -20,6 +22,7 @@ type Context struct {
 	e *Dog
 	w http.ResponseWriter
 	r *http.Request
+	m sync.RWMutex
 
 	// 主体函数和中间件列表
 	index    int
@@ -35,6 +38,7 @@ type Context struct {
 	Code int
 
 	// 其它参数
+	Keys                  map[string]any
 	DisallowUnknownFields bool // 是否校验json对应结构体字段
 }
 
@@ -286,4 +290,34 @@ func (c *Context) FileFromFS(code int, filepath string, fs http.FileSystem) {
 	c.Status(code)
 	c.r.URL.Path = filepath
 	http.FileServer(fs).ServeHTTP(c.w, c.r)
+}
+
+/*
+*
+加密认证
+*/
+
+// SetKey 设置密钥
+func (c *Context) SetKey(keyName string, keyValue any) {
+	c.m.Lock()
+	if c.Keys == nil {
+		c.Keys = make(map[string]any)
+	}
+	c.Keys[keyName] = keyValue
+	c.m.Unlock()
+}
+
+// GetKey 获取密钥
+func (c *Context) GetKey(keyName string) (any, bool) {
+	c.m.Lock()
+	keyValue, ok := c.Keys[keyName]
+	c.m.Unlock()
+
+	return keyValue, ok
+}
+
+// SetBasicAuth 设置Basic认证
+func (c *Context) SetBasicAuth(username string, password string) {
+	encodeStr := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	c.w.Header().Set("Authorization", "Basic "+encodeStr)
 }
