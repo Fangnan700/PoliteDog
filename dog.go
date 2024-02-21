@@ -5,7 +5,6 @@ import (
 	"github.com/fangnan700/PoliteDog/logger"
 	"github.com/fangnan700/PoliteDog/render"
 	"html/template"
-	"log"
 	"net/http"
 	"sync"
 )
@@ -167,13 +166,29 @@ func (dog *Dog) logReq(ctx *Context) {
 	}
 }
 
+// Handle 封装
+func (dog *Dog) Handle() *Dog {
+	return dog
+}
+
 // Run 启动！
 func (dog *Dog) Run(host string, port int) {
 	addr := fmt.Sprintf("%s:%d", host, port)
 	dog.logger.Info(fmt.Sprintf("PoliteDog running at: %s", addr))
 
-	err := http.ListenAndServe(addr, dog)
+	err := http.ListenAndServe(addr, dog.Handle())
 	if err != nil {
-		log.Fatalln(err)
+		dog.logger.Error(err)
+	}
+}
+
+// RunTLS 支持https
+func (dog *Dog) RunTLS(host string, port int, certFile string, keysFile string) {
+	addr := fmt.Sprintf("%s:%d", host, port)
+	dog.logger.Info(fmt.Sprintf("PoliteDog running at: %s", addr))
+
+	err := http.ListenAndServeTLS(addr, certFile, keysFile, dog.Handle())
+	if err != nil {
+		dog.logger.Error(err)
 	}
 }
